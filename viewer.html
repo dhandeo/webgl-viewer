@@ -1,7 +1,7 @@
 <html> 
  
 <head> 
-<title>Viewer1</title> 
+<title>Connectome Viewer</title> 
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1"> 
  
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script> 
@@ -150,6 +150,16 @@
  
     var TILES = [];
 
+    // Load the root tiles to make switching sections smoother.
+    
+    function loadRoots () {
+        var qTile;
+        for (var slice = 0; slice < 900; ++slice) {
+          qTile = GetTile(slice, 0, 0);
+          qTile.StartLoad();
+          }
+    }
+
     // Just for debugging.
     function initTiles () {
         var qTile;
@@ -216,7 +226,13 @@
         mouseDown = false;
     }
  
+    var MOUSE_X;
+    var MOUSE_Y;
+
     function handleMouseMove(event) {
+        MOUSE_X = event.clientX;
+        MOUSE_Y = event.clientY;
+
         if (!mouseDown) {
             return;
         }
@@ -244,6 +260,10 @@
     var zoomAnimateDuration;
 
     function handleKeyDown(event) { 
+        if (String.fromCharCode(event.keyCode) == "P") {
+          ++SLICE;
+          TILES = AdvancePath(MOUSE_X, MOUSE_Y, CAMERA, SLICE);
+        }
         if (String.fromCharCode(event.keyCode) == "R") {
           CAMERA.Reset();
           zoomTarget = CAMERA.GetHeight();
@@ -273,7 +293,7 @@
         }
  
         if (event.keyCode == 38) {
-          // Up cursor key or W
+          // Up cursor key
           zoomTarget *= 2;
           zoomAnimateLast = new Date().getTime();
           zoomAnimateDuration = 200.0;
@@ -429,10 +449,9 @@
 
         // Tile q ----------------------------------
         for (var i = 0; i < TILES.length; ++i) {
-          TILES[i].draw();
+          TILES[i].Draw();
         }
     }
- 
  
     function tick() {
         requestAnimFrame(tick);
@@ -447,9 +466,10 @@
         initShaders();
         initBuffers();
         //initTiles(); // For debugging
+        loadRoots();
         CAMERA = new Camera(0.5, 0.5, 1.0, gl.viewportWidth, gl.viewportHeight);
         TILES = ChooseTiles(CAMERA, SLICE, TILES);
-
+   
  
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         gl.enable(gl.DEPTH_TEST);

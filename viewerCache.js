@@ -2,7 +2,11 @@
 var NUM_TILES = 0;
 var MAX_NUM_TILES = 2000;
 
-function Tile(x, y, level, imageSrc) {
+// Three stages to loading a tile:
+// 1: Create a tile object.
+// 2: Initialize the texture.
+// 3: onload is called indicating the image has been loaded.
+function Tile(x, y, level, name) {
     this.X = x;
     this.Y = y;
     this.Level = level;
@@ -16,14 +20,17 @@ function Tile(x, y, level, imageSrc) {
     this.Matrix[13] = y * scale;
     this.Matrix[14] = -(0.01 * this.Level);
     this.Matrix[15] = 1.0;
-    this.initTexture(imageSrc);
-    this.Name = "";
+    this.Name = name;
+    this.Texture = null;
     this.TimeStamp = TIME_STAMP;
     this.BranchTimeStamp = TIME_STAMP;
     ++NUM_TILES;
 };
 
-Tile.prototype.Recycle = function (x, y, level, imageSrc) {
+Tile.prototype.Recycle = function (x, y, level, name) {
+    // This could be bad.  Do we need to release the gl resource?
+    this.Texture = null;
+    this.Loaded = false;
     this.X = x;
     this.Y = y;
     this.Level = level;
@@ -32,7 +39,6 @@ Tile.prototype.Recycle = function (x, y, level, imageSrc) {
     this.Children[2] = null; 
     this.Children[3] = null; 
     this.Parent = null;
-    this.Loaded = false;
     var scale = 1.0 / (1 << level);
     this.Matrix = mat4.create();
     this.Matrix[0] = this.Matrix[5] = scale;
@@ -40,25 +46,33 @@ Tile.prototype.Recycle = function (x, y, level, imageSrc) {
     this.Matrix[13] = y * scale;
     this.Matrix[14] = -(0.01 * this.Level);
     this.Matrix[15] = 1.0;
-    this.Texture.image.src = imageSrc;
-    this.Name = "";
+    this.Name = name;
     this.TimeStamp = TIME_STAMP;
     this.BranchTimeStamp = TIME_STAMP;
 };
 
-
-Tile.prototype.initTexture = function (imageSrc) {
+// This starts the loading of the tile.
+// Loading is asynchronous, so the tile will not 
+// immediately change its state.
+Tile.prototype.StartLoad = function () {
+    if (this.Texture != null) {
+	return;
+    }
+    // We need to generalize this.
+    var imageSrc = "http://paraviewweb.kitware.com:82/tile.py/daniels/" 
+            + this.Name + ".jpg";
     this.Texture = gl.createTexture();
     this.Texture.image = new Image();
     this.Texture.image.onload = GetLoadTextureFunction(this); 
+    // This starts the loading.
     this.Texture.image.src = imageSrc;
 };
 
 
-Tile.prototype.draw = function () {
-    if ( ! this.Loaded) {
+Tile.prototype.Draw = function () {
+    if ( this.Texture == null || ! this.Loaded) {
 	if (this.Parent) {
-	    this.Parent.draw();
+	    this.Parent.Draw();
 	}
 	return;
     }
@@ -134,6 +148,32 @@ Camera.prototype.Reset = function () {
     this.ComputeMatrix();
 }
 
+
+// Not finished ........................
+function AdvancePath(xMouse, yMouse, camera, slice) {
+    var tmp = 1.0 / camera.Height;
+    var level = 0;
+    while (tmp > 1.5) {
+        ++level;
+        tmp = tmp * 0.5;
+    }
+    // Convert mouse into world coordinates.
+    var x = (2.0 * xMouse / camera.ViewportWidth) - 1.0;
+    var y = 1.0 - (2.0 * yMouse / camera.ViewportWidth);
+    //var z = slice;
+    // Invert the camera matrix and multiply point.
+    var worldPt = [];
+    worldPt[0] = camera.FY + y*camera.height;
+    worldPt[1] = camera.FX + x*camera.height*camera.ViewportWidth/camera.ViewportHight;
+    
+    var tileId = GetTileIdContainingPoint(level, worldPt);
+    tiles = [];
+    tiles.push(GetTile(slice, level, tileId));
+    return tiles;
+}
+
+
+
 // This could get expensive because it is called so often.
 // Eventually I want a quick coverage test to exit early.
 function ChooseTiles(camera, slice, tiles) {
@@ -149,11 +189,25 @@ function ChooseTiles(camera, slice, tiles) {
     bounds[2] = camera.FY-(camera.GetHeight()*0.5);
     bounds[3] = bounds[2] + camera.GetHeight();
     var tileIds = GetVisibleTileIds(level, bounds);
+    var tile;
     tiles = [];
     for (var i = 0; i < tileIds.length; ++i) {
-        tiles.push(GetTile(slice, level, tileIds[i]));
+        tile = GetTile(slice, level, tileIds[i]);
+	tiles.push(tile);
+	tile.StartLoad();
     }
     StampTiles(tiles);
+    // Preload the next slice.
+    bounds[0] = bounds[1] = camera.FX;
+    bounds[2] = bounds[3] = camera.FY;
+    tileIds = GetVisibleTileIds(level, bounds);
+    // There will be only one tile because the bounds
+    // contains only the center point.
+    for (var i = 0; i < tileIds.length; ++i) {
+        tile = GetTile(slice+1, level, tileIds[i]);
+	tile.StartLoad();
+    }
+
     return tiles;
 }
 
@@ -164,9 +218,9 @@ function GetVisibleTileIds (level, bounds) {
     var idList = [];
     var dim = 1 << level;
     bounds[0] = Math.floor(bounds[0] * dim);
-    bounds[1] = Math.ceil(bounds[1] * dim);
+    bounds[1] = Math.ceil(bounds[1] * dim) - 1.0;
     bounds[2] = Math.floor(bounds[2] * dim);
-    bounds[3] = Math.ceil(bounds[3] * dim);
+    bounds[3] = Math.ceil(bounds[3] * dim) - 1.0;
     if (bounds[0] < 0) {bounds[0] = 0;}
     if (bounds[1] >= dim) {bounds[1] = dim-1;}
     if (bounds[2] < 0) {bounds[2] = 0;}
@@ -178,6 +232,19 @@ function GetVisibleTileIds (level, bounds) {
         }
     }
     return idList;
+}
+
+
+function GetTileIdContainingPoint (level, wPt) {
+    var dim = 1 << level;
+    var xIdx = Math.floor(wPt[0] * dim);
+    var yIdx = Math.floor(wPt[1] * dim);
+    if (xIdx < 0) {xIdx = 0;}
+    if (xIdx >= dim) {xIdx = dim-1;}
+    if (yIdx < 0) {yIdx = 0;}
+    if (yIdx >= dim) {yIdx = dim-1;}
+    var id = xIdx | (yIdx << level);
+    return id;
 }
 
 
@@ -235,14 +302,12 @@ function GetTile(slice, level, id) {
     if (ROOT_TILES[slice] == null) {
         var tile;
 	var name = slice + "/t";
-	var imageSrc = "http://paraviewweb.kitware.com:82/tile.py/daniels/" + name + ".jpg";
 	if (NUM_TILES < MAX_NUM_TILES) {
-	    tile = new Tile(0,0,0, imageSrc);
+	    tile = new Tile(0,0,0, name);
 	} else {
 	    tile = StealTile();
-	    tile.Recycle(0,0,0, imageSrc);
+	    tile.Recycle(0,0,0, name);
 	}
-	tile.Name = name;
 	ROOT_TILES[slice] = tile;
     }
     return RecursiveGetTile(ROOT_TILES[slice], level, x, y);
@@ -263,19 +328,16 @@ function RecursiveGetTile(node, deltaDepth, x, y) {
         if (childIdx == 1) {childName += "s";} 
         if (childIdx == 2) {childName += "q";} 
         if (childIdx == 3) {childName += "r";} 
-	imageSrc = "http://paraviewweb.kitware.com:82/tile.py/daniels/" 
-            + childName + ".jpg";
 	if (NUM_TILES < MAX_NUM_TILES) {
 	    child = new Tile(x>>deltaDepth, y>>deltaDepth, 
                              (node.Level + 1),
-                             imageSrc);
+                             childName);
 	} else {
 	    child = StealTile();
 	    child.Recycle(x>>deltaDepth, y>>deltaDepth, 
                          (node.Level + 1),
-                         imageSrc);
+                         childName);
 	}
-	child.Name = childName;
 	node.Children[childIdx] = child;
         child.Parent = node;
     }
