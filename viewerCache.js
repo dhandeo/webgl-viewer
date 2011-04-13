@@ -2,6 +2,53 @@
 var NUM_TILES = 0;
 var MAX_NUM_TILES = 2000;
 
+
+// Keep a queue of tiles to load so we can sort them as
+// new requests come in.
+var LOAD_QUEUE = [];
+var LOADING_COUNT = 0;
+var LOADING_MAX = 4;
+
+// We could chop off the lowest priority tiles if the queue gets too long.
+function LoadQueueAdd (tile) {
+    if (tile.LoadState == 2 || tile.LoadState == 3) {
+	// Loading or loaded
+	return;
+    }
+    if (tile.LoadState == 1) { // Resort the queue.
+	// In queue
+	for (var i = 0; i < LOAD_QUEUE.length; ++i) {
+	    if (LOAD_QUEUE[i] == tile) {
+		LOAD_QUEUE[i] = null;
+		break;
+	    }
+	}
+    }
+    tile.LoadState = 1; // In queue
+    LOAD_QUEUE.push(tile);
+    LoadQueueUpdate();
+}
+
+// We will have some number of tiles loading at one time.
+function LoadQueueUpdate() {
+    while (LOADING_COUNT < LOADING_MAX && LOAD_QUEUE.length > 0) {
+	var tile = LOAD_QUEUE.pop();
+	if (tile != null) {
+	    tile.StartLoad();
+	    tile.LoadState = 2; // Loading.
+	    ++LOADING_COUNT;
+	}
+    }
+}
+
+// Marks a tile as loaded so another can start.
+function LoadQueueLoaded(tile) {
+    --LOADING_COUNT;
+    tile.LoadState = 3; // Loaded
+    LoadQueueUpdate();
+}
+
+
 // Three stages to loading a tile:
 // 1: Create a tile object.
 // 2: Initialize the texture.
@@ -12,7 +59,7 @@ function Tile(x, y, level, name) {
     this.Level = level;
     this.Children = []; 
     this.Parent = null;
-    this.Loaded = false;
+    this.LoadState = 0;
     var scale = 1.0 / (1 << level);
     this.Matrix = mat4.create();
     this.Matrix[0] = this.Matrix[5] = scale;
@@ -28,9 +75,9 @@ function Tile(x, y, level, name) {
 };
 
 Tile.prototype.Recycle = function (x, y, level, name) {
-    // This could be bad.  Do we need to release the gl resource?
+    // This is bad.  We need to release the gl resource?
     this.Texture = null;
-    this.Loaded = false;
+    this.LoadState = 0;
     this.X = x;
     this.Y = y;
     this.Level = level;
@@ -70,7 +117,7 @@ Tile.prototype.StartLoad = function () {
 
 
 Tile.prototype.Draw = function () {
-    if ( this.Texture == null || ! this.Loaded) {
+    if ( this.LoadState != 3) {
 	if (this.Parent) {
 	    this.Parent.Draw();
 	}
@@ -104,7 +151,7 @@ Tile.prototype.handleLoadedTexture = function () {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
     gl.generateMipmap(gl.TEXTURE_2D); 
     gl.bindTexture(gl.TEXTURE_2D, null);
-    this.Loaded = true;
+    LoadQueueLoaded(this);
 };
 
 function GetLoadTextureFunction (otherThis) {
@@ -149,31 +196,6 @@ Camera.prototype.Reset = function () {
 }
 
 
-// Not finished ........................
-function AdvancePath(xMouse, yMouse, camera, slice) {
-    var tmp = 1.0 / camera.Height;
-    var level = 0;
-    while (tmp > 1.5) {
-        ++level;
-        tmp = tmp * 0.5;
-    }
-    // Convert mouse into world coordinates.
-    var x = (2.0 * xMouse / camera.ViewportWidth) - 1.0;
-    var y = 1.0 - (2.0 * yMouse / camera.ViewportWidth);
-    //var z = slice;
-    // Invert the camera matrix and multiply point.
-    var worldPt = [];
-    worldPt[0] = camera.FY + y*camera.height;
-    worldPt[1] = camera.FX + x*camera.height*camera.ViewportWidth/camera.ViewportHight;
-    
-    var tileId = GetTileIdContainingPoint(level, worldPt);
-    tiles = [];
-    tiles.push(GetTile(slice, level, tileId));
-    return tiles;
-}
-
-
-
 // This could get expensive because it is called so often.
 // Eventually I want a quick coverage test to exit early.
 function ChooseTiles(camera, slice, tiles) {
@@ -194,7 +216,7 @@ function ChooseTiles(camera, slice, tiles) {
     for (var i = 0; i < tileIds.length; ++i) {
         tile = GetTile(slice, level, tileIds[i]);
 	tiles.push(tile);
-	tile.StartLoad();
+	LoadQueueAdd(tile);
     }
     StampTiles(tiles);
     // Preload the next slice.
@@ -205,7 +227,7 @@ function ChooseTiles(camera, slice, tiles) {
     // contains only the center point.
     for (var i = 0; i < tileIds.length; ++i) {
         tile = GetTile(slice+1, level, tileIds[i]);
-	tile.StartLoad();
+	LoadQueueAdd(tile);
     }
 
     return tiles;
@@ -338,6 +360,14 @@ function RecursiveGetTile(node, deltaDepth, x, y) {
                          (node.Level + 1),
                          childName);
 	}
+	// This is to fix a bug. Root.BranchTime larger
+	// than all children BranchTimeStamps.  When
+	// long branch is added, node never gets updated.
+	if (node.Children[0] == null && node.Children[1] == null &&
+	    node.Children[2] == null && node.Children[3] == null) {
+	    node.BranchTimeStamp = TIME_STAMP;
+	}
+
 	node.Children[childIdx] = child;
         child.Parent = node;
     }

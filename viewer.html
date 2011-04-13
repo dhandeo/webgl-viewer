@@ -7,6 +7,7 @@
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script> 
 <script type="text/javascript" src="webgl-utils.js"></script> 
 <script type="text/javascript" src="viewerCache.js"></script> 
+<script type="text/javascript" src="viewerPath.js"></script> 
  
 <script id="shader-fs" type="x-shader/x-fragment"> 
     #ifdef GL_ES
@@ -156,7 +157,7 @@
         var qTile;
         for (var slice = 0; slice < 900; ++slice) {
           qTile = GetTile(slice, 0, 0);
-          qTile.StartLoad();
+          LoadQueueAdd(qTile);
           }
     }
 
@@ -258,11 +259,11 @@
     var zoomTarget = 1.0;
     var zoomAnimateLast;
     var zoomAnimateDuration;
+    var P_KEY_PRESSED = false;
 
     function handleKeyDown(event) { 
         if (String.fromCharCode(event.keyCode) == "P") {
-          ++SLICE;
-          TILES = AdvancePath(MOUSE_X, MOUSE_Y, CAMERA, SLICE);
+          P_KEY_PRESSED = true;
         }
         if (String.fromCharCode(event.keyCode) == "R") {
           CAMERA.Reset();
@@ -288,6 +289,9 @@
           }
         } else if (event.keyCode == 39) {
           // Right cursor key
+          if (P_KEY_PRESSED) {
+            AdvancePath(MOUSE_X, MOUSE_Y, CAMERA, SLICE);
+          }
           ++SLICE;
           TILES = ChooseTiles(CAMERA, SLICE, TILES);
         }
@@ -309,6 +313,9 @@
 
 
     function handleKeyUp(event) {
+        if (String.fromCharCode(event.keyCode) == "P") {
+          P_KEY_PRESSED = event;
+        }
     }
 
     function animateZoom() {
