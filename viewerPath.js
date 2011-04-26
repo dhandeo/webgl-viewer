@@ -1,31 +1,38 @@
 
+var PATH_VERTEX_POSITION_BUFFER;
+var PATH_POINTS = [
+        8000,  0.0,  0,
+	8000,  8000, 0,
+        8000,  8000,  8000,
+        8000,  16000,  8000];
 
 
+function PathInitBuffers() {
+    PATH_VERTEX_POSITION_BUFFER = gl.createBuffer();
+}
+ 
+
+function PathDraw(program) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, PATH_VERTEX_POSITION_BUFFER);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(PATH_POINTS), 
+                  gl.STATIC_DRAW);
+    PATH_VERTEX_POSITION_BUFFER.itemSize = 3;
+    PATH_VERTEX_POSITION_BUFFER.numItems = PATH_POINTS.length / 3;
 
 
-
-
-function AdvancePath(xMouse, yMouse, camera, slice) {
-    var tmp = 1.0 / camera.Height;
-    var level = 0;
-    while (tmp > 1.5) {
-        ++level;
-        tmp = tmp * 0.5;
-    }
-    // Convert mouse into world coordinates.
-    var x = (2.0 * xMouse / camera.ViewportWidth) - 1.0;
-    var y = 1.0 - (2.0 * yMouse / camera.ViewportWidth);
-    //var z = slice;
-    // Invert the camera matrix and multiply point.
-    // Or we could do it this simple way.
-    var worldPt = [];
-    worldPt[0] = camera.FY + y*camera.height;
-    worldPt[1] = camera.FX + x*camera.height*camera.ViewportWidth/camera.ViewportHight;
+    gl.bindBuffer(gl.ARRAY_BUFFER, PATH_VERTEX_POSITION_BUFFER);
+    gl.vertexAttribPointer(program.vertexPositionAttribute, PATH_VERTEX_POSITION_BUFFER.itemSize, gl.FLOAT, false, 0, 0);
     
-    var tileId = GetTileIdContainingPoint(level, worldPt);
-    tiles = [];
-    tiles.push(GetTile(slice, level, tileId));
-    return tiles;
+    //setMatrixUniforms();
+    gl.drawArrays(gl.LINE_STRIP, 0, PATH_VERTEX_POSITION_BUFFER.numItems);
+}
+
+function AdvancePath(xMouse, yMouse, camera) {
+    // Convert mouse into world coordinates.
+    var worldPoint = camera.DisplayToWorld(xMouse, camera.ViewportHeight-yMouse, 0.0);
+    PATH_POINTS.push(worldPoint[0]);
+    PATH_POINTS.push(worldPoint[1]);
+    PATH_POINTS.push(worldPoint[2]);    
 }
 
 
