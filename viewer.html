@@ -145,6 +145,8 @@
     }
  
  
+    var PATH_COUNT = 0;
+    var PATHS = [];
     var TILES = [];
 
     // Load the root tiles to make switching sections smoother.
@@ -277,7 +279,16 @@
         } else if (event.keyCode == 39) {
           // Right cursor key
           if (P_KEY_PRESSED) {
-            AdvancePath(MOUSE_X, MOUSE_Y, CAMERA);
+            ++PATH_COUNT;
+            PATHS[PATH_COUNT] = new Path();
+            PATHS[PATH_COUNT].Copy(PATHS[PATH_COUNT-1]);
+            PATHS[PATH_COUNT].Advance(MOUSE_X, MOUSE_Y, CAMERA);
+            // This did not help.
+            //gl.deleteBuffer(PATHS[PATH_COUNT-1].Buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, PATHS[PATH_COUNT-1].Buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, null, 
+                  gl.STATIC_DRAW);
+            PATHS[PATH_COUNT].CreateBuffer();
           }
           ++SLICE;
           CAMERA.Translate(0,0,ROOT_SPACING[2]);
@@ -385,7 +396,7 @@
         tileCellBuffer.itemSize = 1;
         tileCellBuffer.numItems = cellData.length;
 
-        PathInitBuffers();
+        //PathInitBuffers();
     }
  
     function drawScene() {
@@ -402,7 +413,9 @@
 
         // Draw Path
         gl.uniform1i(program.useTextureUniform, false);
-        PathDraw(program);
+        //PATHS[PATH_COUNT].Draw(program);
+        PATHS[1].Draw(program);
+        PATHS[0].Draw(program);
 
         // Draw Tiles ----------------------------------
         gl.useProgram(program);
@@ -441,7 +454,31 @@
         CAMERA = new Camera(gl.viewportWidth, gl.viewportHeight);
         zoomTarget = CAMERA.GetHeight();
         TILES = ChooseTiles(CAMERA, SLICE, TILES);
- 
+
+	PATHS[0] = new Path();
+        PATHS[0].AddPoint(8000,  0.0,  0);
+        PATHS[0].AddPoint(8000,  8000, 0);
+        PATHS[0].AddPoint(8000,  8000,  8000);
+        PATHS[0].AddPoint(8000,  16000,  8000);
+        PATHS[0].CreateBuffer();
+
+	PATHS[1] = new Path();
+        PATHS[1].AddPoint(3000,  0.0,  0);
+        PATHS[1].AddPoint(3000,  8000, 0);
+        PATHS[1].AddPoint(3000,  8000,  8000);
+        PATHS[1].AddPoint(3000,  16000,  8000);
+        // This breaks the path rendering.  Why?  Different number of points?
+        //PATHS[1].AddPoint(3000,  5000,  5000);
+        PATHS[1].CreateBuffer();
+
+	//PATHS[1] = new Path();
+        //PATHS[1].AddPoint(3000,  3000, 0);
+        //PATHS[1].AddPoint(5000,  3000, 0);
+        //PATHS[1].AddPoint(5000,  5000, 0);
+        //PATHS[1].AddPoint(3000,  5000, 0);
+        //PATHS[1].AddPoint(3000,  3000, 0);
+        //PATHS[1].CreateBuffer();
+
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
  
