@@ -6,8 +6,6 @@
  
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script> 
 <script type="text/javascript" src="webgl-utils.js"></script> 
-<script type="text/javascript" src="viewerCache.js"></script> 
-<script type="text/javascript" src="viewerPath.js"></script> 
  
 <script id="shader-fs" type="x-shader/x-fragment"> 
     #ifdef GL_ES
@@ -145,60 +143,33 @@
     }
  
  
-    var PATH_COUNT = 0;
-    var PATHS = [];
-    var TILES = [];
-
-    // Load the root tiles to make switching sections smoother.
-    
-    function loadRoots () {
-        var qTile;
-        for (var slice = 0; slice < 900; ++slice) {
-          qTile = GetTile(slice, 0, 0);
-          LoadQueueAdd(qTile);
-          }
-    }
-
-    // Just for debugging.
-    function initTiles () {
-        var qTile;
-        //qTile = new Tile(0,0,0, "http://paraviewweb.kitware.com:82/tile.py/daniels/1/t.jpg");
-        //Tiles.push(qTile);
-        //qTile = new Tile(0,1,1, "tq.jpg");
-        //Tiles.push(qTile);
-        //qTile = new Tile(1,1,1, "tr.jpg");
-        //Tiles.push(qTile);
-        //qTile = new Tile(1,0,1, "ts.jpg");
-        //Tiles.push(qTile);
-        //qTile = new Tile(0,0,1, "tt.jpg");
-        //Tiles.push(qTile);
-    
-    
-        qTile = GetTile(1, 1, 0);
-        Tiles.push(qTile);
-        //qTile = GetTile(1, 1, 3);
-        //Tiles.push(qTile);
-    
-        qTile = GetTile(1, 3, 2+(2*8));
-        Tiles.push(qTile);
-    
-        qTile = GetTile(1, 2, 6);
-        Tiles.push(qTile);
-        qTile = GetTile(1, 2, 9);
-        Tiles.push(qTile);
-        qTile = GetTile(1, 2, 10);
-        Tiles.push(qTile);
-    }
-    
-
-    var CAMERA;
+// Global variables
     var SLICE = 1;
+    var NAME = "t";
+    var CAMERA;
+    var POSITION_MATRIX;
+    var IMAGE;
+    var LOADING_IMAGE;
+    var IMAGE_TEXTURE;
 
- 
- 
-    function degToRad(degrees) {
-        return degrees * Math.PI / 180;
-    }
+
+function initCamera() {
+    CAMERA = mat4.create();
+    mat4.identity(CAMERA);
+    var yScale = 2.0;
+    var xScale = 2.0;
+    var zScale = 2.0;
+    CAMERA[0] =  xScale;
+    CAMERA[2] =  0; 
+    CAMERA[5] =  yScale;
+    CAMERA[8] =  0;
+    CAMERA[10]=  zScale;
+    CAMERA[12]= -0.5*xScale;
+    CAMERA[13]= -0.5*yScale;
+    CAMERA[14]=  0.0;
+}
+
+
  
  
     var mouseDown = false;
@@ -216,30 +187,7 @@
         mouseDown = false;
     }
  
-    var MOUSE_X;
-    var MOUSE_Y;
-
     function handleMouseMove(event) {
-        MOUSE_X = event.clientX;
-        MOUSE_Y = event.clientY;
-
-        if (!mouseDown) {
-            return;
-        }
-        var newX = event.clientX;
-        var newY = event.clientY;
- 
-        var deltaX = lastMouseX - newX
-        var deltaY = newY - lastMouseY;
-        
-        deltaX = deltaX * CAMERA.GetWidth() / gl.viewportHeight
-        deltaY = deltaY * CAMERA.GetHeight() / gl.viewportHeight
-        
-        CAMERA.Translate(deltaX, deltaY, 0.0);
-        TILES = ChooseTiles(CAMERA, SLICE, TILES);
-
-        lastMouseX = newX
-        lastMouseY = newY;
     }
  
 //------------- Keys ---------------
@@ -250,89 +198,47 @@
     var P_KEY_PRESSED = false;
 
     function handleKeyDown(event) { 
-        if (String.fromCharCode(event.keyCode) == "P") {
-          P_KEY_PRESSED = true;
-        }
-        if (String.fromCharCode(event.keyCode) == "R") {
-          CAMERA.Reset();
-          zoomTarget = CAMERA.GetHeight();
-        }
-        if (event.keyCode == 33) {
-          // PageUp
-          zoomTarget *= 2;
-          zoomAnimateLast = new Date().getTime();
-          zoomAnimateDuration = 200.0;
-        }
-        if (event.keyCode == 34) {
-          // PageDown 
-          zoomTarget *= 0.5;
-          zoomAnimateLast = new Date().getTime();
-          zoomAnimateDuration = 200.0;
+        if (event.keyCode == 39) {
+          ++SLICE;
+          if (SLICE > 500) {SLICE = 1;}
+          loadImage(SLICE, NAME);
         }
         if (event.keyCode == 37) {
-          // Left cursor key
-          if (SLICE > 1) {
-             CAMERA.Translate(0,0,-ROOT_SPACING[2]);
-            --SLICE;
-            TILES = ChooseTiles(CAMERA, SLICE, TILES);
-          }
-        } else if (event.keyCode == 39) {
-          // Right cursor key
-          if (P_KEY_PRESSED) {
-            ++PATH_COUNT;
-            PATHS[PATH_COUNT] = new Path();
-            PATHS[PATH_COUNT].Copy(PATHS[PATH_COUNT-1]);
-            PATHS[PATH_COUNT].Advance(MOUSE_X, MOUSE_Y, CAMERA);
-            // This did not help.
-            //gl.deleteBuffer(PATHS[PATH_COUNT-1].Buffer);
-    gl.bindBuffer(gl.ARRAY_BUFFER, PATHS[PATH_COUNT-1].Buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, null, 
-                  gl.STATIC_DRAW);
-            PATHS[PATH_COUNT].CreateBuffer();
-          }
-          ++SLICE;
-          CAMERA.Translate(0,0,ROOT_SPACING[2]);
-          TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          --SLICE;
+          if (SLICE < 1) {SLICE = 500;}
+          loadImage(SLICE, NAME);
         }
- 
         if (event.keyCode == 38) {
-          // Up cursor key
-          zoomTarget *= 2;
-          zoomAnimateLast = new Date().getTime();
-          zoomAnimateDuration = 200.0;
-        } else if (event.keyCode == 40) {
+          // Peel a character off the name.
+          NAME = NAME.substr(0,NAME.length-1);
+          loadImage(SLICE, NAME);
+        }
+        if (event.keyCode == 40) {
           // Down cursor key
-          if (zoomTarget > 0.9 / (1 << 5)) {
-            zoomTarget *= 0.5;
-            zoomAnimateLast = new Date().getTime();
-            zoomAnimateDuration = 200.0;
-          }
+          drawScene();
+        }
+
+        if (String.fromCharCode(event.keyCode) == "T") {
+          NAME = NAME + "t";
+          loadImage(SLICE, NAME);
+        }
+        if (String.fromCharCode(event.keyCode) == "S") {
+          NAME = NAME + "s";
+          loadImage(SLICE, NAME);
+        }
+        if (String.fromCharCode(event.keyCode) == "Q") {
+          NAME = NAME + "q";
+          loadImage(SLICE, NAME);
+        }
+        if (String.fromCharCode(event.keyCode) == "R") {
+          NAME = NAME + "r";
+          loadImage(SLICE, NAME);
         }
     }
 
 
     function handleKeyUp(event) {
-        if (String.fromCharCode(event.keyCode) == "P") {
-          P_KEY_PRESSED = event;
-        }
     }
-
-    function animateZoom() {
-      if (CAMERA.GetHeight() != zoomTarget) {
-        var timeNow = new Date().getTime();
-        if (timeNow > (zoomAnimateLast + zoomAnimateDuration)) {
-          CAMERA.Height = zoomTarget;
-        } 
-        else {
-          var current = CAMERA.GetHeight();
-          CAMERA.Height = current + (zoomTarget-current)*(timeNow-zoomAnimateLast)/zoomAnimateDuration;
-        }
-        CAMERA.ComputeMatrix();
-        TILES = ChooseTiles(CAMERA, SLICE, TILES);
-        zoomAnimateDuration -= (timeNow-zoomAnimateLast);
-        zoomAnimateLast = timeNow;  
-      }
-    }    
 
     var tileVertexPositionBuffer;
     var tileVertexTextureCoordBuffer;
@@ -395,8 +301,6 @@
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cellData), gl.STATIC_DRAW);
         tileCellBuffer.itemSize = 1;
         tileCellBuffer.numItems = cellData.length;
-
-        //PathInitBuffers();
     }
  
     function drawScene() {
@@ -405,71 +309,85 @@
         var program = imageProgram;
         gl.useProgram(program);
 
-        var perspective = ! document.getElementById("perspective").checked;
-        if (perspective) {
-          CAMERA.SetRotation(CAMERA.Rotation + 0.01);
-	}
-        gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA.Matrix);
-
-        // Draw Path
-        gl.uniform1i(program.useTextureUniform, false);
-        //PATHS[PATH_COUNT].Draw(program);
-        PATHS[1].Draw(program);
-        PATHS[0].Draw(program);
+        gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA);
 
         // Draw Tiles ----------------------------------
         gl.useProgram(program);
-
         gl.uniform1i(program.useTextureUniform, true);
 
         // These are the same for every tile.
         // Vertex points (shifted by tiles matrix)
         gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexPositionBuffer);
-        gl.vertexAttribPointer(program.vertexPositionAttribute, tileVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(program.vertexPositionAttribute, 
+                               tileVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
         // Texture coordinates
         gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexTextureCoordBuffer);
-        gl.vertexAttribPointer(program.textureCoordAttribute, tileVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(program.textureCoordAttribute, 
+                               tileVertexTextureCoordBuffer.itemSize,gl.FLOAT,false,0,0);
         // Cell Connectivity
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tileCellBuffer);
 
-        for (var i = 0; i < TILES.length; ++i) {
-          TILES[i].Draw(program);
-        }
+        drawTile(program);
     }
  
-    function tick() {
-        requestAnimFrame(tick);
-        animateZoom();
-        drawScene();
+function loadImage(slice, name) {
+    if (LOADING_IMAGE != null) {
+      return;
     }
- 
- 
+    var imageSrc = "http://paraviewweb.kitware.com:82/tile.py/daniels/" 
+            + slice + "/" + name + ".jpg";
+    LOADING_IMAGE = new Image();
+    LOADING_IMAGE.onload = imageLoadedCallback; 
+    // This starts the loading.
+    LOADING_IMAGE.src = imageSrc;
+};
+
+function imageLoadedCallback() {
+    if (IMAGE_TEXTURE != null) {
+          gl.deleteTexture(IMAGE_TEXTURE);
+    }
+    if (IMAGE != null) {
+      delete IMAGE;
+    }
+    IMAGE = LOADING_IMAGE;
+    LOADING_IMAGE = null;		      
+    IMAGE_TEXTURE = gl.createTexture();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.bindTexture(gl.TEXTURE_2D, IMAGE_TEXTURE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, IMAGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+    gl.generateMipmap(gl.TEXTURE_2D); 
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    drawScene();
+}
+
+function drawTile(program) {
+    if (IMAGE_TEXTURE == null) {
+      return;
+    }
+
+    // Texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, IMAGE_TEXTURE);
+    gl.uniform1i(program.samplerUniform, 0);
+
+    gl.uniformMatrix4fv(program.mvMatrixUniform, false, POSITION_MATRIX);
+    gl.drawElements(gl.TRIANGLES, tileCellBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+};
+
+
+
     function webGLStart() {
         var canvas = document.getElementById("lesson11-canvas");
         initGL(canvas);
         initShaders();
         initBuffers();
-        //initTiles(); // For debugging
-        loadRoots();
-        CAMERA = new Camera(gl.viewportWidth, gl.viewportHeight);
-        zoomTarget = CAMERA.GetHeight();
-        TILES = ChooseTiles(CAMERA, SLICE, TILES);
-
-	PATHS[0] = new Path();
-        PATHS[0].AddPoint(8000,  0.0,  0);
-        PATHS[0].AddPoint(8000,  8000, 0);
-        PATHS[0].AddPoint(8000,  8000,  8000);
-        PATHS[0].AddPoint(8000,  16000,  8000);
-        PATHS[0].CreateBuffer();
-
-	PATHS[1] = new Path();
-        PATHS[1].AddPoint(3000,  0.0,  0);
-        PATHS[1].AddPoint(3000,  8000, 0);
-        PATHS[1].AddPoint(3000,  8000,  8000);
-        PATHS[1].AddPoint(3000,  16000,  8000);
-        // This breaks the path rendering.  Why?  Different number of points?
-        //PATHS[1].AddPoint(3000,  5000,  5000);
-        PATHS[1].CreateBuffer();
+        loadImage(SLICE);
+        initCamera();
+        // Translate corners of image.
+        POSITION_MATRIX = mat4.create();
+        mat4.identity(POSITION_MATRIX);
 
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
@@ -480,8 +398,6 @@
 
         document.onkeydown = handleKeyDown;
         document.onkeyup = handleKeyUp;
- 
-        tick();
     }
  
 </script> 

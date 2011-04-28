@@ -17,7 +17,7 @@ var LOADING_MAX = 4;
 
 // We could chop off the lowest priority tiles if the queue gets too long.
 function LoadQueueAdd (tile) {
-    if (tile.LoadState == 2 || tile.LoadState == 3) {
+    if (tile.LoadState != 0) {
 	// Loading or loaded
 	return;
     }
@@ -33,6 +33,19 @@ function LoadQueueAdd (tile) {
     tile.LoadState = 1; // In queue
     LOAD_QUEUE.push(tile);
     LoadQueueUpdate();
+}
+
+// I need a way to remove tiles from the queue when they are deleted.
+// I know this is inefficient.
+function LoadQueueRemove (tile) {
+    var length = LOAD_QUEUE.length;
+    for (var i = 0; i < length; ++i) {
+	if (LOAD_QUEUE[i] == tile) {
+	    tile.LoadState = 0;
+	    LOAD_QUEUE[i] = null;
+	    return;
+	}
+    }
 }
 
 // We will have some number of tiles loading at one time.
@@ -81,29 +94,27 @@ function Tile(x, y, z, level, name) {
     ++NUM_TILES;
 };
 
-Tile.prototype.Recycle = function (x, y, level, name) {
-    gl.deleteTexture(this.Texture);
+Tile.prototype.destructor=function()
+{
+    --NUM_TILES;
+    if (this.Texture) {
+	gl.deleteTexture(this.Texture);
+    }
     this.Texture = null;
-    this.LoadState = 0;
-    this.X = x;
-    this.Y = y;
-    this.Level = level;
-    this.Children[0] = null; 
-    this.Children[1] = null; 
-    this.Children[2] = null; 
-    this.Children[3] = null; 
-    this.Parent = null;
-    var scale = 1.0 / (1 << level);
-    this.Matrix = mat4.create();
-    this.Matrix[0] = this.Matrix[5] = scale;
-    this.Matrix[12] = x * scale;
-    this.Matrix[13] = y * scale;
-    this.Matrix[14] = -(0.01 * this.Level);
-    this.Matrix[15] = 1.0;
-    this.Name = name;
-    this.TimeStamp = TIME_STAMP;
-    this.BranchTimeStamp = TIME_STAMP;
-};
+    delete this.Matrix;
+    this.Matrix = null;
+    if (this.Image) {
+	delete this.Image;
+	this.Image = 0;
+    }
+    for (var i = 0; i < 4; ++i) {
+	if (this.Children[i] != null) {
+	    this.Children[i].destructor();
+	    this.Children[i] = null;
+	}
+    }
+}
+
 
 // This starts the loading of the tile.
 // Loading is asynchronous, so the tile will not 
@@ -162,7 +173,7 @@ function GetLoadTextureFunction (otherThis) {
 }
 
 function Camera (viewportWidth, viewportHeight) {
-    this.Rotation = 0;;
+    this.Rotation = 0;
     this.Matrix = mat4.create();
     this.ViewportWidth = viewportWidth;
     this.ViewportHeight = viewportHeight;
@@ -242,6 +253,12 @@ Camera.prototype.DisplayToWorld = function (x,y,z) {
 // Eventually I want a quick coverage test to exit early.
 // Note:  This does not work for cameras with rotation.
 function ChooseTiles(camera, slice, tiles) {
+    // I am putting this here to avoid deleting tiles
+    // in the rendering list.
+    if (NUM_TILES >= MAX_NUM_TILES) {
+	PruneTiles();           
+    }
+    
     var tmp = TILE_DIMENSIONS[1]*ROOT_SPACING[1] / camera.Height;
     var level = 0;
     while (tmp > 1.5) {
@@ -367,12 +384,7 @@ function GetTile(slice, level, id) {
     if (ROOT_TILES[slice] == null) {
         var tile;
 	var name = slice + "/t";
-	if (NUM_TILES < MAX_NUM_TILES) {
-	    tile = new Tile(0,0,slice, 0, name);
-	} else {
-	    tile = StealTile();
-	    tile.Recycle(0,0,0, name);
-	}
+	tile = new Tile(0,0,slice, 0, name);
 	ROOT_TILES[slice] = tile;
     }
     return RecursiveGetTile(ROOT_TILES[slice], level, x, y, slice);
@@ -393,16 +405,9 @@ function RecursiveGetTile(node, deltaDepth, x, y, z) {
         if (childIdx == 1) {childName += "s";} 
         if (childIdx == 2) {childName += "q";} 
         if (childIdx == 3) {childName += "r";} 
-	if (NUM_TILES < MAX_NUM_TILES) {
-	    child = new Tile(x>>deltaDepth, y>>deltaDepth, z,
-                             (node.Level + 1),
-                             childName);
-	} else {
-	    child = StealTile();
-	    child.Recycle(x>>deltaDepth, y>>deltaDepth, 
+	child = new Tile(x>>deltaDepth, y>>deltaDepth, z,
                          (node.Level + 1),
                          childName);
-	}
 	// This is to fix a bug. Root.BranchTime larger
 	// than all children BranchTimeStamps.  When
 	// long branch is added, node never gets updated.
@@ -419,46 +424,40 @@ function RecursiveGetTile(node, deltaDepth, x, y, z) {
 
 
 // Find the oldest tile, remove it from the tree and return it to be recycled.
-function StealTile()
+var PRUNE_TIME = 0;
+function PruneTiles()
 {
-    var min = TIME_STAMP;
-    var minNode = null;
+    if (PRUNE_TIME > TIME_STAMP) {
+	PRUNE_TIME = 0;
+    }
+
+    // Advance the prune threshold.
+    PRUNE_TIME += 0.05 * (TIME_STAMP - PRUNE_TIME);
+
     for (var i = 0; i < ROOT_TILES.length; ++i) {
 	var node = ROOT_TILES[i];
-	if (node != null && node.BranchTimeStamp <= min) {
-	    // We cannot steal root tiles.
-	    // Skip roots that do not have children.
-	    if (node.Children[0] != null || node.Children[1] != null ||
-		node.Children[2] != null || node.Children[3] != null) {
-		minNode = ROOT_TILES[i];
-		min = minNode.BranchTimeStamp;
+	if (node != null && node.BranchTimeStamp < PRUNE_TIME) {
+	    RecursivePruneTiles(node);
+	}
+    }
+}
+
+function RecursivePruneTiles(node)
+{
+    var leaf = true;
+    
+    for (var i = 0; i < 4; ++i) {
+	if (node.Children[i] != null) {
+	    leaf = false;
+	    if (node.Children[i].BranchTimeStamp < PRUNE_TIME) {
+		RecursivePruneTiles(node.Children[i]);
 	    }
 	}
     }
-    return RecursiveStealTile(minNode);
-}
-
-function RecursiveStealTile(node)
-{
-    var min = TIME_STAMP;
-    var minNode = null;
-    if (node.Children[0] != null && node.Children[0].BranchTimeStamp <= min) {
-	minNode = node.Children[0];
-	min = minNode.BranchTimeStamp;
-    }
-    if (node.Children[1] != null && node.Children[1].BranchTimeStamp <= min) {
-	minNode = node.Children[1];
-	min = minNode.BranchTimeStamp;
-    }
-    if (node.Children[2] != null && node.Children[2].BranchTimeStamp <= min) {
-	minNode = node.Children[2];
-	min = minNode.BranchTimeStamp;
-    }
-    if (node.Children[3] != null && node.Children[3].BranchTimeStamp <= min) {
-	minNode = node.Children[3];
-	min = minNode.BranchTimeStamp;
-    }
-    if (minNode == null) { // steal this leaf
+    if (leaf && node.Parent != null) {
+	if ( node.LoadState == 1) {
+	    LoadQueueRemove(node); 
+	}
 	var parent = node.Parent;
 	// nodes will always have parents because we do not steal roots.
 	if (parent.Children[0] == node) {
@@ -472,9 +471,9 @@ function RecursiveStealTile(node)
 	}
 	node.Parent = null;
 	UpdateBranchTimeStamp(parent)
-	return node;
+	node.destructor();
+	delete node;
     }
-    return RecursiveStealTile(minNode);
 }
 
 
