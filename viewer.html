@@ -48,7 +48,47 @@
         vTextureCoord = aTextureCoord;
     }
 </script> 
- 
+
+
+
+
+
+<script id="shader2-fs" type="x-shader/x-fragment">
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    varying vec4 vColor;
+
+    void main(void) {
+        gl_FragColor = vColor;
+    }
+</script>
+<script id="shader2-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+
+    uniform mat4 uPMatrix;
+
+    varying vec4 vColor;
+
+    void main(void) {
+        gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+        vColor[0] = 0.0;
+        vColor[1] = 0.8;
+        vColor[2] = 1.0;
+        vColor[3] = 1.0;
+    }
+</script>
+
+
+
+
+
+
+
+
+
+
  
 <script type="text/javascript"> 
  
@@ -136,12 +176,34 @@
  
 
     var imageProgram;
-    var pathProgram;
+    var shaderProgram2;
 
     function initShaders() {
         // this program works when defined by itself, but not with imageProgram.
         //pathProgram = createProgram("shader-pfs", "shader-pvs");
         imageProgram = createProgram("shader-fs", "shader-vs");
+
+
+        // --------------------
+
+
+        var fragmentShader2 = getShader(gl, "shader2-fs");
+        var vertexShader2 = getShader(gl, "shader2-vs");
+
+        shaderProgram2 = gl.createProgram();
+        gl.attachShader(shaderProgram2, vertexShader2);
+        gl.attachShader(shaderProgram2, fragmentShader2);
+        gl.linkProgram(shaderProgram2);
+        if (!gl.getProgramParameter(shaderProgram2, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+        gl.useProgram(shaderProgram2);
+
+        shaderProgram2.vertexPositionAttribute = gl.getAttribLocation(shaderProgram2, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram2.vertexPositionAttribute);
+
+        shaderProgram2.pMatrixUniform = gl.getUniformLocation(shaderProgram2, "uPMatrix");
+
     }
  
  
@@ -278,17 +340,9 @@
           }
         } else if (event.keyCode == 39) {
           // Right cursor key
-          if (P_KEY_PRESSED) {
-            ++PATH_COUNT;
-            PATHS[PATH_COUNT] = new Path();
-            PATHS[PATH_COUNT].Copy(PATHS[PATH_COUNT-1]);
-            PATHS[PATH_COUNT].Advance(MOUSE_X, MOUSE_Y, CAMERA);
-            // This did not help.
-            //gl.deleteBuffer(PATHS[PATH_COUNT-1].Buffer);
-    gl.bindBuffer(gl.ARRAY_BUFFER, PATHS[PATH_COUNT-1].Buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, null, 
-                  gl.STATIC_DRAW);
-            PATHS[PATH_COUNT].CreateBuffer();
+          var path = ! document.getElementById("path").checked;
+          if (path) {
+            PATHS[0].Advance(MOUSE_X, MOUSE_Y, CAMERA);
           }
           ++SLICE;
           CAMERA.Translate(0,0,ROOT_SPACING[2]);
@@ -395,8 +449,6 @@
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cellData), gl.STATIC_DRAW);
         tileCellBuffer.itemSize = 1;
         tileCellBuffer.numItems = cellData.length;
-
-        //PathInitBuffers();
     }
  
     function drawScene() {
@@ -405,21 +457,21 @@
         var program = imageProgram;
         gl.useProgram(program);
 
-        var perspective = ! document.getElementById("perspective").checked;
-        if (perspective) {
+
+        var rotate = ! document.getElementById("rotate").checked;
+        if (rotate) {
           CAMERA.SetRotation(CAMERA.Rotation + 0.01);
 	}
-        gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA.Matrix);
 
-        // Draw Path
-        gl.uniform1i(program.useTextureUniform, false);
-        //PATHS[PATH_COUNT].Draw(program);
-        PATHS[1].Draw(program);
-        PATHS[0].Draw(program);
+        // Draw Path ------------------------------
+        gl.useProgram(shaderProgram2);
+        gl.uniformMatrix4fv(shaderProgram2.pMatrixUniform, false, CAMERA.Matrix);
+        PATHS[0].Draw(shaderProgram2);
 
         // Draw Tiles ----------------------------------
-        gl.useProgram(program);
 
+        gl.useProgram(program);
+        gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA.Matrix);
         gl.uniform1i(program.useTextureUniform, true);
 
         // These are the same for every tile.
@@ -445,7 +497,7 @@
  
  
     function webGLStart() {
-        var canvas = document.getElementById("lesson11-canvas");
+        var canvas = document.getElementById("viewer-canvas");
         initGL(canvas);
         initShaders();
         initBuffers();
@@ -456,20 +508,7 @@
         TILES = ChooseTiles(CAMERA, SLICE, TILES);
 
 	PATHS[0] = new Path();
-        PATHS[0].AddPoint(8000,  0.0,  0);
-        PATHS[0].AddPoint(8000,  8000, 0);
-        PATHS[0].AddPoint(8000,  8000,  8000);
-        PATHS[0].AddPoint(8000,  16000,  8000);
         PATHS[0].CreateBuffer();
-
-	PATHS[1] = new Path();
-        PATHS[1].AddPoint(3000,  0.0,  0);
-        PATHS[1].AddPoint(3000,  8000, 0);
-        PATHS[1].AddPoint(3000,  8000,  8000);
-        PATHS[1].AddPoint(3000,  16000,  8000);
-        // This breaks the path rendering.  Why?  Different number of points?
-        //PATHS[1].AddPoint(3000,  5000,  5000);
-        PATHS[1].CreateBuffer();
 
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         gl.enable(gl.DEPTH_TEST);
@@ -491,44 +530,23 @@
  
  
 <body onload="webGLStart();"> 
-    <a href="http://learningwebgl.com/blog/?p=1253">&lt;&lt; Back to Lesson 11</a><br /> 
- 
-    <canvas id="lesson11-canvas" style="border: none;" width="900" height="600"></canvas> 
+    <canvas id="viewer-canvas" style="border: none;" width="900" height="600"></canvas> 
     <br/> 
  
-    <input type="checkbox" id="perspective" checked /> Perspective <br/> 
+    <input type="checkbox" id="rotate" checked /> Rotate <br/> 
+    <input type="checkbox" id="path" checked /> Path <br/> 
     Pan the image by dragging it with the mouse.
     <br/> 
  
-    <h2>Directional light:</h2> 
+    <h2>Path Color:</h2> 
  
     <table style="border: 0; padding: 10px;"> 
         <tr> 
-            <td><b>Direction:</b> 
-            <td>X: <input type="text" id="lightDirectionX" value="-1.0" /> 
-            <td>Y: <input type="text" id="lightDirectionY" value="-1.0" /> 
-            <td>Z: <input type="text" id="lightDirectionZ" value="-1.0" /> 
+            <td>Red: <input type="text" id="lightDirectionX" value="0.5" /> 
+            <td>Green: <input type="text" id="lightDirectionY" value="1.0" /> 
+            <td>Blue: <input type="text" id="lightDirectionZ" value="1.0" /> 
         </tr> 
-        <tr> 
-            <td><b>Colour:</b> 
-            <td>R: <input type="text" id="directionalR" value="0.8" /> 
-            <td>G: <input type="text" id="directionalG" value="0.8" /> 
-            <td>B: <input type="text" id="directionalB" value="0.8" /> 
-        </tr> 
-    </table> 
- 
- 
-    <h2>Ambient light:</h2> 
- 
-    <table style="border: 0; padding: 10px;"> 
-        <tr> 
-            <td><b>Colour:</b> 
-            <td>R: <input type="text" id="ambientR" value="0.2" /> 
-            <td>G: <input type="text" id="ambientG" value="0.2" /> 
-            <td>B: <input type="text" id="ambientB" value="0.2" /> 
-        </tr> 
-    </table> 
-    <br/> 
+    </table>     <br/> 
     <br/> 
     <br/> 
  

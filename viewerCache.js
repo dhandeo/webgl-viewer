@@ -196,21 +196,33 @@ Camera.prototype.GetWidth = function () {
 }
 
 Camera.prototype.ComputeMatrix = function () {
-    var ct = Math.cos(this.Rotation);
-    var st = Math.sin(this.Rotation);
+    var c = Math.cos(this.Rotation);
+    var s = Math.sin(this.Rotation);
+    var x = this.FocalPoint[0];
+    var y = this.FocalPoint[1];
+    var z = this.FocalPoint[2];
+    var w = this.GetWidth();
+    var h = this.GetHeight();
+ 
     mat4.identity(this.Matrix);
-    var yScale = 2.0 / this.GetHeight();
-    var xScale = 2.0 / this.GetWidth();
-    var zScale = yScale;
-    this.Matrix[0] =  ct * xScale;
-    this.Matrix[2] = -st * xScale; 
-    this.Matrix[5] =  yScale;
-    this.Matrix[8] =  st * zScale;
-    this.Matrix[10]=  ct * zScale;
-    this.Matrix[12]= -ct*this.FocalPoint[0]*xScale - st*this.FocalPoint[2]*zScale;
-    this.Matrix[13]= -this.FocalPoint[1]*yScale;
-    this.Matrix[14]=  st*this.FocalPoint[2]*xScale - ct*this.FocalPoint[2]*zScale;
-    
+    //this.Matrix[0] =  c*h;
+    //this.Matrix[2] = -s*h;
+    //this.Matrix[5] =  w;
+    //this.Matrix[8] =  s*h;
+    //this.Matrix[10]=  c*h;
+    //this.Matrix[12]= -h*(c*x+s*z);
+    //this.Matrix[13]= -w*y;
+    //this.Matrix[14]=  h*(s*x-c*z);
+    //this.Matrix[15]=  0.5*w*h;
+    this.Matrix[0] =  c;
+    this.Matrix[2] = -s;
+    this.Matrix[5] =  w/h;
+    this.Matrix[8] =  s;
+    this.Matrix[10]=  c;
+    this.Matrix[12]= -(c*x+s*z);
+    this.Matrix[13]= -w*y/h;
+    this.Matrix[14]=  (s*x-c*z);
+    this.Matrix[15]=  0.5*w;
 }
 
 Camera.prototype.Reset = function () {
@@ -223,8 +235,10 @@ Camera.prototype.Reset = function () {
 
     this.FocalPoint[0] = (bounds[0] + bounds[1]) * 0.5;
     this.FocalPoint[1] = (bounds[2] + bounds[3]) * 0.5;
-    this.FocalPoint[2] = (bounds[4] + bounds[5]) * 0.5;
+    // We would need to set slice as well.
+    //this.FocalPoint[2] = (bounds[4] + bounds[5]) * 0.5;
     this.Height = bounds[3]-bounds[2];
+    this.Rotation = 0;
     this.ComputeMatrix();
 }
 

@@ -12,11 +12,8 @@ function Path() {
 Path.prototype.Draw = function (program) {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.Buffer);
     gl.vertexAttribPointer(program.vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.CellBuffer);
 
-    //gl.drawArrays(gl.LINE_STRIP, 0, this.Points.length / 3);
-    gl.drawElements(gl.LINE_STRIP, this.Points.length / 3, gl.UNSIGNED_SHORT, 0);
-
+    gl.drawArrays(gl.LINE_STRIP, 0, this.Points.length / 3);
 }
  
 
@@ -36,20 +33,14 @@ Path.prototype.AddPoint = function (x, y, z) {
 
 
 Path.prototype.CreateBuffer = function () {
+    if (this.Buffer != null) {
+	gl.deleteBuffer(this.Buffer);
+    }
     this.Buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.Buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.Points), 
                   gl.STATIC_DRAW);
 
-
-    var cellBuffer = [];
-    var numPoints = this.Points.length / 3;
-    for (var i = 0; i < numPoints; ++i) {
-	cellBuffer.push(i);
-    }
-    this.CellBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.CellBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cellBuffer), gl.STATIC_DRAW);
 }
 
 //function PathUpdateBuffers() {
@@ -65,7 +56,17 @@ Path.prototype.Advance = function (xMouse, yMouse, camera) {
     this.Points.push(worldPoint[0]);
     this.Points.push(worldPoint[1]);
     this.Points.push(worldPoint[2]);    
-}
+    this.CreateBuffer();
 
+    // Lets modify the camera so the next slice will not translate much.
+    // Should we look at the direction of the last two points, or use
+    // more points to try and avoid small / variations?
+    var idx = this.Points.length - 12;
+    if (idx >= 0) {
+	var dx = (worldPoint[0] - this.Points[idx]) * 0.5;
+	var dy = (worldPoint[1] - this.Points[idx+1]) * 0.5;
+	camera.Translate(dx, dy, 0);
+    }
+}
 
 
