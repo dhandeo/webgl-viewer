@@ -173,8 +173,8 @@
 
     function handleMouseDown(event) {
         //mouseDown = true;
-        var x = 2.0*(event.clientX / gl.viewportHeight) - 1.0; 
-        var y = 1.0 - 2.0*(event.clientY / gl.viewportHeight); 
+        var x = 2.0*((event.clientX-6) / gl.viewportHeight) - 1.0; 
+        var y = 1.0 - 2.0*((event.clientY-26) / gl.viewportHeight); 
         addPoint(x,y);
         //initSquareBuffers2();
         drawScene();

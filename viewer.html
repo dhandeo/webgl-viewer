@@ -8,6 +8,11 @@
 <script type="text/javascript" src="webgl-utils.js"></script> 
 <script type="text/javascript" src="viewerCache.js"></script> 
 <script type="text/javascript" src="viewerPath.js"></script> 
+
+<script type="text/javascript" src="paths/path0.js"></script> 
+<script type="text/javascript" src="paths/path1.js"></script> 
+<script type="text/javascript" src="paths/path2.js"></script> 
+<script type="text/javascript" src="paths/path3.js"></script> 
  
 <script id="shader-fs" type="x-shader/x-fragment"> 
     #ifdef GL_ES
@@ -15,16 +20,10 @@
     #endif
  
     uniform sampler2D uSampler;
-    uniform bool uUseTexture;
- 
     varying vec2 vTextureCoord;
    
     void main(void) {
-        if (uUseTexture) {
-          gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
-        } else {
-          gl_FragColor = vec4(0.0, 0.8, 1.0, 1.0);
-        }
+        gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
     }
 </script> 
  
@@ -35,16 +34,10 @@
     uniform mat4 uMVMatrix;
     uniform mat4 uPMatrix;
     uniform mat3 uNMatrix;
-    uniform bool uUseTexture;
- 
     varying vec2 vTextureCoord;
  
     void main(void) {
-        if (uUseTexture) {
-          gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
-        } else {
-          gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
-        }
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
         vTextureCoord = aTextureCoord;
     }
 </script> 
@@ -58,25 +51,20 @@
     precision highp float;
     #endif
 
-    varying vec4 vColor;
+    uniform vec4 uColor;
 
     void main(void) {
-        gl_FragColor = vColor;
+        gl_FragColor = uColor;
     }
 </script>
 <script id="shader2-vs" type="x-shader/x-vertex">
     attribute vec3 aVertexPosition;
 
     uniform mat4 uPMatrix;
-
-    varying vec4 vColor;
+    uniform vec4 uColor;
 
     void main(void) {
         gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
-        vColor[0] = 0.0;
-        vColor[1] = 0.8;
-        vColor[2] = 1.0;
-        vColor[3] = 1.0;
     }
 </script>
 
@@ -92,7 +80,12 @@
  
 <script type="text/javascript"> 
  
-    var gl;
+var PATH_COUNT = 0;
+var PATHS = [];
+
+
+var TILES = [];
+var gl;
  
     function initGL(canvas) {
         try {
@@ -168,8 +161,6 @@
         program.mvMatrixUniform = gl.getUniformLocation(program, "uMVMatrix");
         // Texture
         program.samplerUniform = gl.getUniformLocation(program, "uSampler");
-        // Hack to draw path with a single program/shader
-        program.useTextureUniform = gl.getUniformLocation(program, "uUseTexture");
 
         return program;
     }
@@ -179,8 +170,6 @@
     var shaderProgram2;
 
     function initShaders() {
-        // this program works when defined by itself, but not with imageProgram.
-        //pathProgram = createProgram("shader-pfs", "shader-pvs");
         imageProgram = createProgram("shader-fs", "shader-vs");
 
 
@@ -203,14 +192,12 @@
         gl.enableVertexAttribArray(shaderProgram2.vertexPositionAttribute);
 
         shaderProgram2.pMatrixUniform = gl.getUniformLocation(shaderProgram2, "uPMatrix");
+        // For color of the path.
+        shaderProgram2.colorUniform = gl.getUniformLocation(shaderProgram2, "uColor");
 
     }
  
  
-    var PATH_COUNT = 0;
-    var PATHS = [];
-    var TILES = [];
-
     // Load the root tiles to make switching sections smoother.
     
     function loadRoots () {
@@ -255,7 +242,8 @@
 
     var CAMERA;
     var SLICE = 1;
-
+    var xMouseError = 7;
+    var yMouseError = 8;
  
  
     function degToRad(degrees) {
@@ -269,8 +257,8 @@
  
     function handleMouseDown(event) {
         mouseDown = true;
-        lastMouseX = event.clientX;
-        lastMouseY = event.clientY;
+        lastMouseX = event.clientX-xMouseError;
+        lastMouseY = event.clientY-yMouseError;
     }
  
  
@@ -282,14 +270,14 @@
     var MOUSE_Y;
 
     function handleMouseMove(event) {
-        MOUSE_X = event.clientX;
-        MOUSE_Y = event.clientY;
+        MOUSE_X = event.clientX-xMouseError;
+        MOUSE_Y = event.clientY-yMouseError;
 
         if (!mouseDown) {
             return;
         }
-        var newX = event.clientX;
-        var newY = event.clientY;
+        var newX = event.clientX-xMouseError;
+        var newY = event.clientY-yMouseError;
  
         var deltaX = lastMouseX - newX
         var deltaY = newY - lastMouseY;
@@ -312,44 +300,73 @@
     var P_KEY_PRESSED = false;
 
     function handleKeyDown(event) { 
+        if (event.keyCode == 45) {
+          // Insert key: Add a new branch to the tree.
+          var path = ! document.getElementById("path").checked;
+          if (path && PATH_COUNT > 0) {
+            PATHS[PATH_COUNT-1].StartNewPath(MOUSE_X, MOUSE_Y, CAMERA, 0.0);
+            // Paths should render branch points with a glyph / sprite.
+          }
+        } else if (event.keyCode == 36) {
+          // Home key: Start a new tree.
+          // We should get the color from the input fields.
+          PATHS[PATH_COUNT] = new Tree();
+          ++PATH_COUNT;
+        } else if (event.keyCode == 46) {
+          // Delete key: Delete a point from the path.
+          if (PATH_COUNT > 0 && PATHS[PATH_COUNT-1].GetLength() > 0) {
+            var point = PATHS[PATH_COUNT-1].PopPoint();
+            CAMERA.FocalPoint = point;
+            SLICE = point[2] / 10;
+            CAMERA.ComputeMatrix();
+            TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          }
+        } else if (event.keyCode == 33) {
+          // PageUp: add a point to the path.
+          if (SLICE > 1) {
+            var path = ! document.getElementById("path").checked;
+            if (path && PATH_COUNT > 0) {
+              PATHS[PATH_COUNT-1].Advance(MOUSE_X, MOUSE_Y, CAMERA, -ROOT_SPACING[2]);
+            }
+            --SLICE;
+            TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          }
+        } else if (event.keyCode == 34) {
+          // PageDown: Add a point to the path
+          var path = ! document.getElementById("path").checked;
+          if (path && PATH_COUNT > 0) {
+            PATHS[PATH_COUNT-1].Advance(MOUSE_X, MOUSE_Y, CAMERA, ROOT_SPACING[2]);
+          }
+          ++SLICE;
+          TILES = ChooseTiles(CAMERA, SLICE, TILES);
+        }
+
         if (String.fromCharCode(event.keyCode) == "P") {
+          // This should be a hot key for toggleing the path check.
+          // It does nothing now.
           P_KEY_PRESSED = true;
-        }
-        if (String.fromCharCode(event.keyCode) == "R") {
-          CAMERA.Reset();
+        } else if (String.fromCharCode(event.keyCode) == "R") {
+          //CAMERA.Reset();
+          CAMERA.Rotation = 0;
+          CAMERA.ComputeMatrix();
           zoomTarget = CAMERA.GetHeight();
+          TILES = ChooseTiles(CAMERA,SLICE,TILES);
         }
-        if (event.keyCode == 33) {
-          // PageUp
-          zoomTarget *= 2;
-          zoomAnimateLast = new Date().getTime();
-          zoomAnimateDuration = 200.0;
-        }
-        if (event.keyCode == 34) {
-          // PageDown 
-          zoomTarget *= 0.5;
-          zoomAnimateLast = new Date().getTime();
-          zoomAnimateDuration = 200.0;
-        }
+
+        // Cursor keys just move around the view.
         if (event.keyCode == 37) {
           // Left cursor key
           if (SLICE > 1) {
-             CAMERA.Translate(0,0,-ROOT_SPACING[2]);
+            CAMERA.Translate(0,0,-ROOT_SPACING[2]);
             --SLICE;
             TILES = ChooseTiles(CAMERA, SLICE, TILES);
           }
         } else if (event.keyCode == 39) {
           // Right cursor key
-          var path = ! document.getElementById("path").checked;
-          if (path) {
-            PATHS[0].Advance(MOUSE_X, MOUSE_Y, CAMERA);
-          }
           ++SLICE;
           CAMERA.Translate(0,0,ROOT_SPACING[2]);
           TILES = ChooseTiles(CAMERA, SLICE, TILES);
-        }
- 
-        if (event.keyCode == 38) {
+        } else if (event.keyCode == 38) {
           // Up cursor key
           zoomTarget *= 2;
           zoomAnimateLast = new Date().getTime();
@@ -466,13 +483,13 @@
         // Draw Path ------------------------------
         gl.useProgram(shaderProgram2);
         gl.uniformMatrix4fv(shaderProgram2.pMatrixUniform, false, CAMERA.Matrix);
-        PATHS[0].Draw(shaderProgram2);
-
+        for (var i = 0; i < PATH_COUNT; ++i) {
+          PATHS[i].Draw(shaderProgram2);
+	}
         // Draw Tiles ----------------------------------
 
         gl.useProgram(program);
         gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA.Matrix);
-        gl.uniform1i(program.useTextureUniform, true);
 
         // These are the same for every tile.
         // Vertex points (shifted by tiles matrix)
@@ -507,10 +524,15 @@
         zoomTarget = CAMERA.GetHeight();
         TILES = ChooseTiles(CAMERA, SLICE, TILES);
 
-	PATHS[0] = new Path();
-        PATHS[0].CreateBuffer();
+	initPath0();
+	initPath1();
+	initPath2();
+	initPath3();
+	
+        //PATHS[PATH_COUNT] = new Tree();
+        //++PATH_COUNT;
 
-        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
         gl.enable(gl.DEPTH_TEST);
  
         canvas.onmousedown = handleMouseDown;
