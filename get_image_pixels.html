@@ -1,0 +1,73 @@
+<html>
+<head>
+  <!-- Loading jQuery directly from google -->
+	<script src="js/jquery-1.5.1.min.js"></script>
+	
+	<!-- jQuery.json 
+	<script type="text/javascript" src="lib/jquery.json-2.2.min.js"></script>
+	-->
+
+	<script type="text/javascript">
+		function button_pressed()
+			{
+			// This URL can be constructed using syntax
+			// /x1/y1/x2/y2/zoomlevel/db/image/tilesize
+
+			//var params = '6004/4147/6014/4156/0/daniels128/1/128'
+			var params = '4991/3962/5018/3986/0/daniels128/1/128';
+
+			var pixelurl = 'js/128.js';
+			var pixelurl = 'http://ayodhya:8000/' + params;
+			var imageurl = 'http://ayodhya:81/get_extent.py/' + params;
+			$.ajax({
+				url: pixelurl,
+				dataType: 'jsonp',
+				crossDomain : true,
+	
+				success:  function(data, textStatus, jqXHR)
+					{
+					// obj is the javascript object
+					$("#result").html(JSON.stringify(obj));
+					$("#resultimage").html('<img src="' + imageurl + '" />');	
+					},
+				error: function(obj)
+					{
+					alert(JSON.stringify(obj));
+					}
+				});
+			}
+	</script>
+</head>
+<body>
+
+<h1>Demonstration for getting image pixels </h1>
+
+Demo: <br/>
+<p id="demo">Please see the source code </p>
+
+<br/>
+<button type="button" onclick="button_pressed()"> Load image pixels </button>
+<br/>
+
+Result : <br/>
+<p id="result"> result will be loaded here </p>
+
+ResultImage : <br/>
+<p id="resultimage"> Image will be loaded here </p>
+
+
+<div id='hidden_result' style='display : none'>
+</div>
+
+</body>
+</html> 
+
+
+
+
+
+
+<script>
+</script>
+
+
