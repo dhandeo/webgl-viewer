@@ -10,27 +10,29 @@
 	<script type="text/javascript">
 		function button_pressed()
 			{
-			// This URL can be constructed using syntax
 			// /x1/y1/x2/y2/zoomlevel/db/image/tilesize
 
 			//var params = '6004/4147/6014/4156/0/daniels128/1/128'
-			var params = '4991/3962/5018/3986/0/daniels128/1/128';
+			var params = 'x1=4991&y1=3962&x2=5018&y2=3986&level=0&db=daniels128&col=1&tile=128';
 
-			var pixelurl = 'js/128.js';
-			var pixelurl = 'http://ayodhya:8000/' + params;
-			var imageurl = 'http://ayodhya:81/get_extent.py/' + params;
+			var base = 'http://connectome.kitware.com:81'
+			var pixelurl = base + '/get_pixels.py?' + params;
+			var imageurl = base + '/get_extent.py?' + params;
+
 			$.ajax({
 				url: pixelurl,
 				dataType: 'jsonp',
 				crossDomain : true,
 	
-				success:  function(data, textStatus, jqXHR)
+				success:  
+					function(data, textStatus, jqXHR)
 					{
 					// obj is the javascript object
-					$("#result").html(JSON.stringify(obj));
+					$("#result").html(JSON.stringify(data));
 					$("#resultimage").html('<img src="' + imageurl + '" />');	
 					},
-				error: function(obj)
+				error: 
+					function(obj)
 					{
 					alert(JSON.stringify(obj));
 					}
@@ -61,13 +63,4 @@ ResultImage : <br/>
 
 </body>
 </html> 
-
-
-
-
-
-
-<script>
-</script>
-
 
