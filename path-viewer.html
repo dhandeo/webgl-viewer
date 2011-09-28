@@ -1,0 +1,578 @@
+<html> 
+ 
+<head> 
+<title>Connectome Viewer</title> 
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1"> 
+ 
+<script type="text/javascript" src="glMatrix-0.9.5.min.js"></script> 
+<script type="text/javascript" src="webgl-utils.js"></script> 
+<script type="text/javascript" src="viewerCache.js"></script> 
+<script type="text/javascript" src="viewerPath.js"></script> 
+
+<script type="text/javascript" src="paths/path0.js"></script> 
+<script type="text/javascript" src="paths/path1.js"></script> 
+<script type="text/javascript" src="paths/path2.js"></script> 
+<script type="text/javascript" src="paths/path3.js"></script> 
+ 
+<script id="shader-fs" type="x-shader/x-fragment"> 
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+ 
+    uniform sampler2D uSampler;
+    varying vec2 vTextureCoord;
+   
+    void main(void) {
+        gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+    }
+</script> 
+ 
+<script id="shader-vs" type="x-shader/x-vertex"> 
+    attribute vec3 aVertexPosition;
+    attribute vec2 aTextureCoord;
+ 
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    uniform mat3 uNMatrix;
+    varying vec2 vTextureCoord;
+ 
+    void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        vTextureCoord = aTextureCoord;
+    }
+</script> 
+
+
+
+
+
+<script id="shader2-fs" type="x-shader/x-fragment">
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    uniform vec4 uColor;
+
+    void main(void) {
+        gl_FragColor = uColor;
+    }
+</script>
+<script id="shader2-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+
+    uniform mat4 uPMatrix;
+    uniform vec4 uColor;
+
+    void main(void) {
+        gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+
+
+
+
+
+
+
+
+
+ 
+<script type="text/javascript"> 
+ 
+var PATH_COUNT = 0;
+var PATHS = [];
+
+
+var TILES = [];
+var gl;
+ 
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+ 
+ 
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+ 
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+ 
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+ 
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+ 
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+ 
+        return shader;
+    }
+ 
+ 
+    function createProgram(fragmentShaderID, vertexShaderID) {
+        var fragmentShader = getShader(gl, fragmentShaderID);
+        var vertexShader = getShader(gl, vertexShaderID);
+ 
+        var program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+ 
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+ 
+        program.vertexPositionAttribute = gl.getAttribLocation(program, "aVertexPosition");
+        gl.enableVertexAttribArray(program.vertexPositionAttribute);
+ 
+        program.textureCoordAttribute = gl.getAttribLocation(program, "aTextureCoord");
+        gl.enableVertexAttribArray(program.textureCoordAttribute);
+ 
+        // Camera
+        program.pMatrixUniform = gl.getUniformLocation(program, "uPMatrix");
+        // Tile matrix
+        program.mvMatrixUniform = gl.getUniformLocation(program, "uMVMatrix");
+        // Texture
+        program.samplerUniform = gl.getUniformLocation(program, "uSampler");
+
+        return program;
+    }
+ 
+
+    var imageProgram;
+    var shaderProgram2;
+
+    function initShaders() {
+        imageProgram = createProgram("shader-fs", "shader-vs");
+
+
+        // --------------------
+
+
+        var fragmentShader2 = getShader(gl, "shader2-fs");
+        var vertexShader2 = getShader(gl, "shader2-vs");
+
+        shaderProgram2 = gl.createProgram();
+        gl.attachShader(shaderProgram2, vertexShader2);
+        gl.attachShader(shaderProgram2, fragmentShader2);
+        gl.linkProgram(shaderProgram2);
+        if (!gl.getProgramParameter(shaderProgram2, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+        gl.useProgram(shaderProgram2);
+
+        shaderProgram2.vertexPositionAttribute = gl.getAttribLocation(shaderProgram2, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram2.vertexPositionAttribute);
+
+        shaderProgram2.pMatrixUniform = gl.getUniformLocation(shaderProgram2, "uPMatrix");
+        // For color of the path.
+        shaderProgram2.colorUniform = gl.getUniformLocation(shaderProgram2, "uColor");
+
+    }
+ 
+ 
+    // Load the root tiles to make switching sections smoother.
+    
+    function loadRoots () {
+        var qTile;
+        for (var slice = 0; slice < 900; ++slice) {
+          qTile = GetTile(slice, 0, 0);
+          LoadQueueAdd(qTile);
+          }
+    }
+
+    // Just for debugging.
+    function initTiles () {
+        var qTile;
+        //qTile = new Tile(0,0,0, "http://paraviewweb.kitware.com:82/tile.py/daniels/1/t.jpg");
+        //Tiles.push(qTile);
+        //qTile = new Tile(0,1,1, "tq.jpg");
+        //Tiles.push(qTile);
+        //qTile = new Tile(1,1,1, "tr.jpg");
+        //Tiles.push(qTile);
+        //qTile = new Tile(1,0,1, "ts.jpg");
+        //Tiles.push(qTile);
+        //qTile = new Tile(0,0,1, "tt.jpg");
+        //Tiles.push(qTile);
+    
+    
+        qTile = GetTile(1, 1, 0);
+        Tiles.push(qTile);
+        //qTile = GetTile(1, 1, 3);
+        //Tiles.push(qTile);
+    
+        qTile = GetTile(1, 3, 2+(2*8));
+        Tiles.push(qTile);
+    
+        qTile = GetTile(1, 2, 6);
+        Tiles.push(qTile);
+        qTile = GetTile(1, 2, 9);
+        Tiles.push(qTile);
+        qTile = GetTile(1, 2, 10);
+        Tiles.push(qTile);
+    }
+    
+
+    var CAMERA;
+    var SLICE = 1;
+    var xMouseError = 7;
+    var yMouseError = 8;
+ 
+ 
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+ 
+ 
+    var mouseDown = false;
+    var lastMouseX = null;
+    var lastMouseY = null;
+ 
+    function handleMouseDown(event) {
+        mouseDown = true;
+        lastMouseX = event.clientX-xMouseError;
+        lastMouseY = event.clientY-yMouseError;
+    }
+ 
+ 
+    function handleMouseUp(event) {
+        mouseDown = false;
+    }
+ 
+    var MOUSE_X;
+    var MOUSE_Y;
+
+    function handleMouseMove(event) {
+        MOUSE_X = event.clientX-xMouseError;
+        MOUSE_Y = event.clientY-yMouseError;
+
+        if (!mouseDown) {
+            return;
+        }
+        var newX = event.clientX-xMouseError;
+        var newY = event.clientY-yMouseError;
+ 
+        var deltaX = lastMouseX - newX
+        var deltaY = newY - lastMouseY;
+        
+        deltaX = deltaX * CAMERA.GetWidth() / gl.viewportHeight
+        deltaY = deltaY * CAMERA.GetHeight() / gl.viewportHeight
+        
+        CAMERA.Translate(deltaX, deltaY, 0.0);
+        TILES = ChooseTiles(CAMERA, SLICE, TILES);
+
+        lastMouseX = newX
+        lastMouseY = newY;
+    }
+ 
+//------------- Keys ---------------
+
+    var zoomTarget;
+    var zoomAnimateLast;
+    var zoomAnimateDuration;
+    var P_KEY_PRESSED = false;
+
+    function handleKeyDown(event) { 
+        if (event.keyCode == 45) {
+          // Insert key: Add a new branch to the tree.
+          var path = ! document.getElementById("path").checked;
+          if (path && PATH_COUNT > 0) {
+            PATHS[PATH_COUNT-1].StartNewPath(MOUSE_X, MOUSE_Y, CAMERA, 0.0);
+            // Paths should render branch points with a glyph / sprite.
+          }
+        } else if (event.keyCode == 36) {
+          // Home key: Start a new tree.
+          // We should get the color from the input fields.
+          PATHS[PATH_COUNT] = new Tree();
+          ++PATH_COUNT;
+        } else if (event.keyCode == 46) {
+          // Delete key: Delete a point from the path.
+          if (PATH_COUNT > 0 && PATHS[PATH_COUNT-1].GetLength() > 0) {
+            var point = PATHS[PATH_COUNT-1].PopPoint();
+            CAMERA.FocalPoint = point;
+            SLICE = point[2] / 10;
+            CAMERA.ComputeMatrix();
+            TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          }
+        } else if (event.keyCode == 33) {
+          // PageUp: add a point to the path.
+          if (SLICE > 1) {
+            var path = ! document.getElementById("path").checked;
+            if (path && PATH_COUNT > 0) {
+              PATHS[PATH_COUNT-1].Advance(MOUSE_X, MOUSE_Y, CAMERA, -ROOT_SPACING[2]);
+            }
+            --SLICE;
+            TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          }
+        } else if (event.keyCode == 34) {
+          // PageDown: Add a point to the path
+          var path = ! document.getElementById("path").checked;
+          if (path && PATH_COUNT > 0) {
+            PATHS[PATH_COUNT-1].Advance(MOUSE_X, MOUSE_Y, CAMERA, ROOT_SPACING[2]);
+          }
+          ++SLICE;
+          TILES = ChooseTiles(CAMERA, SLICE, TILES);
+        }
+
+        if (String.fromCharCode(event.keyCode) == "P") {
+          // This should be a hot key for toggleing the path check.
+          // It does nothing now.
+          P_KEY_PRESSED = true;
+        } else if (String.fromCharCode(event.keyCode) == "R") {
+          //CAMERA.Reset();
+          CAMERA.Rotation = 0;
+          CAMERA.ComputeMatrix();
+          zoomTarget = CAMERA.GetHeight();
+          TILES = ChooseTiles(CAMERA,SLICE,TILES);
+        }
+
+        // Cursor keys just move around the view.
+        if (event.keyCode == 37) {
+          // Left cursor key
+          if (SLICE > 1) {
+            CAMERA.Translate(0,0,-ROOT_SPACING[2]);
+            --SLICE;
+            TILES = ChooseTiles(CAMERA, SLICE, TILES);
+          }
+        } else if (event.keyCode == 39) {
+          // Right cursor key
+          ++SLICE;
+          CAMERA.Translate(0,0,ROOT_SPACING[2]);
+          TILES = ChooseTiles(CAMERA, SLICE, TILES);
+        } else if (event.keyCode == 38) {
+          // Up cursor key
+          zoomTarget *= 2;
+          zoomAnimateLast = new Date().getTime();
+          zoomAnimateDuration = 200.0;
+        } else if (event.keyCode == 40) {
+          // Down cursor key
+          if (zoomTarget > 0.9 / (1 << 5)) {
+            zoomTarget *= 0.5;
+            zoomAnimateLast = new Date().getTime();
+            zoomAnimateDuration = 200.0;
+          }
+        }
+    }
+
+
+    function handleKeyUp(event) {
+        if (String.fromCharCode(event.keyCode) == "P") {
+          P_KEY_PRESSED = event;
+        }
+    }
+
+    function animateZoom() {
+      if (CAMERA.GetHeight() != zoomTarget) {
+        var timeNow = new Date().getTime();
+        if (timeNow > (zoomAnimateLast + zoomAnimateDuration)) {
+          CAMERA.Height = zoomTarget;
+        } 
+        else {
+          var current = CAMERA.GetHeight();
+          CAMERA.Height = current + (zoomTarget-current)*(timeNow-zoomAnimateLast)/zoomAnimateDuration;
+        }
+        CAMERA.ComputeMatrix();
+        TILES = ChooseTiles(CAMERA, SLICE, TILES);
+        zoomAnimateDuration -= (timeNow-zoomAnimateLast);
+        zoomAnimateLast = timeNow;  
+      }
+    }    
+
+    var tileVertexPositionBuffer;
+    var tileVertexTextureCoordBuffer;
+    var tileCellBuffer;
+ 
+    function initBuffers() {
+        var vertexPositionData = [];
+        var textureCoordData = [];
+
+        // Make 4 points
+        textureCoordData.push(0.0);
+        textureCoordData.push(0.0);
+        vertexPositionData.push(0.0);
+        vertexPositionData.push(0.0);
+        vertexPositionData.push(0.0);
+
+        textureCoordData.push(1.0);
+        textureCoordData.push(0.0);
+        vertexPositionData.push(1.0);
+        vertexPositionData.push(0.0);
+        vertexPositionData.push(0.0);
+
+        textureCoordData.push(0.0);
+        textureCoordData.push(1.0);
+        vertexPositionData.push(0.0);
+        vertexPositionData.push(1.0);
+        vertexPositionData.push(0.0);
+
+        textureCoordData.push(1.0);
+        textureCoordData.push(1.0);
+        vertexPositionData.push(1.0);
+        vertexPositionData.push(1.0);
+        vertexPositionData.push(0.0);
+
+        // Now create the cell.
+ 
+        var cellData = [];
+        cellData.push(0);
+        cellData.push(1);
+        cellData.push(2);
+ 
+        cellData.push(2);
+        cellData.push(1);
+        cellData.push(3);
+ 
+        tileVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexTextureCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoordData), gl.STATIC_DRAW);
+        tileVertexTextureCoordBuffer.itemSize = 2;
+        tileVertexTextureCoordBuffer.numItems = textureCoordData.length / 2;
+ 
+        tileVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexPositionData), gl.STATIC_DRAW);
+        tileVertexPositionBuffer.itemSize = 3;
+        tileVertexPositionBuffer.numItems = vertexPositionData.length / 3;
+ 
+        tileCellBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tileCellBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cellData), gl.STATIC_DRAW);
+        tileCellBuffer.itemSize = 1;
+        tileCellBuffer.numItems = cellData.length;
+    }
+ 
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        var program = imageProgram;
+        gl.useProgram(program);
+
+
+        var rotate = ! document.getElementById("rotate").checked;
+        if (rotate) {
+          CAMERA.SetRotation(CAMERA.Rotation + 0.01);
+	}
+
+        // Draw Path ------------------------------
+        gl.useProgram(shaderProgram2);
+        gl.uniformMatrix4fv(shaderProgram2.pMatrixUniform, false, CAMERA.Matrix);
+        for (var i = 0; i < PATH_COUNT; ++i) {
+          PATHS[i].Draw(shaderProgram2);
+	}
+        // Draw Tiles ----------------------------------
+
+        gl.useProgram(program);
+        gl.uniformMatrix4fv(program.pMatrixUniform, false, CAMERA.Matrix);
+
+        // These are the same for every tile.
+        // Vertex points (shifted by tiles matrix)
+        gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexPositionBuffer);
+        gl.vertexAttribPointer(program.vertexPositionAttribute, tileVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+        // Texture coordinates
+        gl.bindBuffer(gl.ARRAY_BUFFER, tileVertexTextureCoordBuffer);
+        gl.vertexAttribPointer(program.textureCoordAttribute, tileVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+        // Cell Connectivity
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tileCellBuffer);
+
+        for (var i = 0; i < TILES.length; ++i) {
+          TILES[i].Draw(program);
+        }
+    }
+ 
+    function tick() {
+        requestAnimFrame(tick);
+        animateZoom();
+        drawScene();
+    }
+ 
+ 
+    function webGLStart() {
+        var canvas = document.getElementById("viewer-canvas");
+        initGL(canvas);
+        initShaders();
+        initBuffers();
+        //initTiles(); // For debugging
+        loadRoots();
+        CAMERA = new Camera(gl.viewportWidth, gl.viewportHeight);
+        zoomTarget = CAMERA.GetHeight();
+        TILES = ChooseTiles(CAMERA, SLICE, TILES);
+
+	initPath0();
+	initPath1();
+	initPath2();
+	initPath3();
+	
+        //PATHS[PATH_COUNT] = new Tree();
+        //++PATH_COUNT;
+
+        gl.clearColor(0.9, 0.9, 0.9, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+ 
+        canvas.onmousedown = handleMouseDown;
+        document.onmouseup = handleMouseUp;
+        document.onmousemove = handleMouseMove;
+
+        document.onkeydown = handleKeyDown;
+        document.onkeyup = handleKeyUp;
+ 
+        tick();
+    }
+ 
+</script> 
+ 
+ 
+</head> 
+ 
+ 
+<body onload="webGLStart();"> 
+    <canvas id="viewer-canvas" style="border: none;" width="900" height="600"></canvas> 
+    <br/> 
+ 
+    <input type="checkbox" id="rotate" checked /> Rotate <br/> 
+    <input type="checkbox" id="path" checked /> Path <br/> 
+    Pan the image by dragging it with the mouse.
+    <br/> 
+ 
+    <h2>Path Color:</h2> 
+ 
+    <table style="border: 0; padding: 10px;"> 
+        <tr> 
+            <td>Red: <input type="text" id="lightDirectionX" value="0.5" /> 
+            <td>Green: <input type="text" id="lightDirectionY" value="1.0" /> 
+            <td>Blue: <input type="text" id="lightDirectionZ" value="1.0" /> 
+        </tr> 
+    </table>     <br/> 
+    <br/> 
+    <br/> 
+ 
+
+</body> 
+ 
+</html> 
