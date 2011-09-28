@@ -475,17 +475,17 @@ var gl;
         gl.useProgram(program);
 
 
-        var rotate = ! document.getElementById("rotate").checked;
-        if (rotate) {
-          CAMERA.SetRotation(CAMERA.Rotation + 0.01);
-	}
-
-        // Draw Path ------------------------------
-        gl.useProgram(shaderProgram2);
-        gl.uniformMatrix4fv(shaderProgram2.pMatrixUniform, false, CAMERA.Matrix);
-        for (var i = 0; i < PATH_COUNT; ++i) {
-          PATHS[i].Draw(shaderProgram2);
-	}
+//        var rotate = ! document.getElementById("rotate").checked;
+//        if (rotate) {
+//          CAMERA.SetRotation(CAMERA.Rotation + 0.01);
+//	}
+//
+//        // Draw Path ------------------------------
+//        gl.useProgram(shaderProgram2);
+//        gl.uniformMatrix4fv(shaderProgram2.pMatrixUniform, false, CAMERA.Matrix);
+//        for (var i = 0; i < PATH_COUNT; ++i) {
+//          PATHS[i].Draw(shaderProgram2);
+//	}
         // Draw Tiles ----------------------------------
 
         gl.useProgram(program);
@@ -515,7 +515,10 @@ var gl;
  
     function webGLStart() {
         var canvas = document.getElementById("viewer-canvas");
-        initGL(canvas);
+				canvas.width = window.innerWidth;
+				canvas.height = window.innerHeight;
+        
+				initGL(canvas);
         initShaders();
         initBuffers();
         //initTiles(); // For debugging
@@ -551,9 +554,9 @@ var gl;
 </head> 
  
  
-<body onload="webGLStart();"> 
-    <canvas id="viewer-canvas" style="border: none;" width="900" height="600"></canvas> 
-    <br/> 
+<body onload="webGLStart();" height=100% width=100%> 
+    <canvas id="viewer-canvas" height=100%></canvas> 
+    <!--		<br/> 
  
     <input type="checkbox" id="rotate" checked /> Rotate <br/> 
     <input type="checkbox" id="path" checked /> Path <br/> 
@@ -568,11 +571,11 @@ var gl;
             <td>Green: <input type="text" id="lightDirectionY" value="1.0" /> 
             <td>Blue: <input type="text" id="lightDirectionZ" value="1.0" /> 
         </tr> 
-    </table>     <br/> 
-    <br/> 
-    <br/> 
+    </table>  
+    -->
  
-
+ 
+    
 </body> 
  
 </html> 

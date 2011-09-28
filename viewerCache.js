@@ -1,7 +1,7 @@
 
 var TILE_DIMENSIONS = [256, 256];
 var ROOT_SPACING = [64.0, 64.0, 10.0];
-var NUMBER_OF_LEVELS = 6;
+var NUMBER_OF_LEVELS = 14;
 var NUMBER_OF_SECTIONS = 1000;
 
 
@@ -124,7 +124,7 @@ Tile.prototype.StartLoad = function () {
 	return;
     }
     // We need to generalize this.
-    var imageSrc = "http://paraviewweb.kitware.com:82/tile.py/daniels/" 
+    var imageSrc = "../connectome_mongo.php?db=tera&image=montage0&name=" 
             + this.Name + ".jpg";
     this.Texture = gl.createTexture();
     // Reusing the image caused problems.
@@ -177,7 +177,7 @@ function Camera (viewportWidth, viewportHeight) {
     this.Matrix = mat4.create();
     this.ViewportWidth = viewportWidth;
     this.ViewportHeight = viewportHeight;
-    this.Height = 256.0 * 64.0;
+    this.Height = 256.0 * 64.0 *4.;
     this.FocalPoint = [128.0*64.0, 128.0*64.0, 10.0];
     this.ComputeMatrix();
 }
@@ -397,7 +397,8 @@ function GetTile(slice, level, id) {
     var y = id >> level;
     if (ROOT_TILES[slice] == null) {
         var tile;
-	var name = slice + "/t";
+	//var name = slice + "/t";
+	var name = "t";
 	tile = new Tile(0,0,slice, 0, name);
 	ROOT_TILES[slice] = tile;
     }
