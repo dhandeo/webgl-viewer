@@ -3,10 +3,10 @@
 //var_dump($_SESSION['book']);
 # Process the command line parameters
 $server = "127.0.0.1:27017";
+$database = "tera";
 
 @$col_name =  $_GET['image'];
 @$fname =     $_GET['name'];
-@$database = $_GET['db'];
 
 //header('content-type: image/jpeg');
 # Return grey image as there is error or parameters not set
