@@ -150,7 +150,7 @@ Tile.prototype.StartLoad = function () {
 	return;
     }
     // We need to generalize this.
-    var imageSrc = "../connectome_mongo.php?db=tera&image=montage0&name=" 
+    var imageSrc = "chunk.php?image=montage0&name=" 
             + this.Name + ".jpg";
     this.Texture = gl.createTexture();
     // Reusing the image caused problems.
